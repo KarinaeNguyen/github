@@ -1,1 +1,0 @@
-/usr/bin/c++ -O3 -DNDEBUG CMakeFiles/NumericIntegrity.dir/tests/TestNumericIntegrity.cpp.o -o NumericIntegrity  libchemsi.a 

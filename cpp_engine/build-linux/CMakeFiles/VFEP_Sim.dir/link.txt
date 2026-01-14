@@ -1,1 +1,0 @@
-/usr/bin/c++ -O3 -DNDEBUG CMakeFiles/VFEP_Sim.dir/src/main.cpp.o -o VFEP_Sim  libchemsi.a 

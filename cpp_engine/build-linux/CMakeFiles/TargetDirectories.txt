@@ -1,7 +1,0 @@
-/mnt/data/chemsi/Chemsi/cpp_engine/build-linux/CMakeFiles/chemsi.dir
-/mnt/data/chemsi/Chemsi/cpp_engine/build-linux/CMakeFiles/VFEP_Sim.dir
-/mnt/data/chemsi/Chemsi/cpp_engine/build-linux/CMakeFiles/TestAtom.dir
-/mnt/data/chemsi/Chemsi/cpp_engine/build-linux/CMakeFiles/NumericIntegrity.dir
-/mnt/data/chemsi/Chemsi/cpp_engine/build-linux/CMakeFiles/test.dir
-/mnt/data/chemsi/Chemsi/cpp_engine/build-linux/CMakeFiles/edit_cache.dir
-/mnt/data/chemsi/Chemsi/cpp_engine/build-linux/CMakeFiles/rebuild_cache.dir

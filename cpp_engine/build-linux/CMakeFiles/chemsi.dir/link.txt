@@ -1,2 +1,0 @@
-/usr/bin/ar qc libchemsi.a CMakeFiles/chemsi.dir/src/chemistry.cpp.o CMakeFiles/chemsi.dir/src/LiIonRunaway.cpp.o CMakeFiles/chemsi.dir/src/Reactor.cpp.o CMakeFiles/chemsi.dir/src/Simulation.cpp.o CMakeFiles/chemsi.dir/src/Aerodynamics.cpp.o CMakeFiles/chemsi.dir/src/Suppression.cpp.o CMakeFiles/chemsi.dir/src/Ventilation.cpp.o
-/usr/bin/ranlib libchemsi.a

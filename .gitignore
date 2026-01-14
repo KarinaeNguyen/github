@@ -1,0 +1,25 @@
+﻿# Build output
+build*/
+out/
+**/build*/
+**/out/
+
+# CMake/Ninja artifacts
+CMakeCache.txt
+CMakeFiles/
+*.ninja
+.ninja_*
+
+# MSVC / Visual Studio
+.vs/
+*.sln
+*.vcxproj*
+*.pdb
+*.ilk
+*.obj
+
+# Backup files
+*.bak
+
+# Third-party deps (if generated)
+third_party/
