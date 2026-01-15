@@ -149,9 +149,9 @@ if (CHEMSI_ENABLE_GRPC)
     COMMAND "${CHEMSI_PROTOC_EXE}"
     ARGS
       -I "${CHEMSI_PROTO_DIR}"
-      --cpp_out="${CHEMSI_PROTO_GEN_DIR}"
-      --grpc_out="${CHEMSI_PROTO_GEN_DIR}"
-      --plugin=protoc-gen-grpc="${CHEMSI_GRPC_CPP_PLUGIN_EXE}"
+      --cpp_out=generated
+      --grpc_out=generated
+      "--plugin=protoc-gen-grpc=${CHEMSI_GRPC_CPP_PLUGIN_EXE}"
       ${CHEMSI_PROTO_FILES}
     DEPENDS
       ${CHEMSI_PROTO_FILES}
