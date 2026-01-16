@@ -1,7 +1,8 @@
 // main_vis.cpp (based on user's working version; adds square ceiling rail + long-run plot fixes)
 // - Keeps fire_center locked to simulation truth via refresh_obs() (Observation.hotspot_pos_m_*)
 // - Does NOT require any new Observation fields (no nozzle truth) or new Simulation methods
-// - Adds a UI-rendered square ceiling rail that auto-resizes with rack_half and is fixed 30 cm below ceiling
+// - Renders a model-backed square ceiling rail (CeilingRail) that auto-resizes with rack_half
+//   and is fixed 30 cm below ceiling (configurable via UI)
 // - Fixes "plots look broken" by:
 //     * driving simTime from sim.time_s() (authoritative sim clock)
 //     * showing Samples + time range
@@ -16,6 +17,9 @@
 #include <cstdint>
 
 #include "Simulation.h"
+
+// Step 1: model-backed ceiling rail (no UI dependencies)
+#include "../world/ceiling_rail.h"
 
 #include "imgui.h"
 // ---- Docking compatibility shim (older ImGui builds do not define docking flags/APIs)
@@ -65,6 +69,16 @@ static int fail(const char* msg) {
 struct Vec3f { float x, y, z; };
 
 static Vec3f v3(float x, float y, float z) { return {x,y,z}; }
+
+// Conversions between vis-local float vectors and model double vectors.
+static vfep::world::Vec3d to_v3d(Vec3f v) {
+    return vfep::world::Vec3d{ (double)v.x, (double)v.y, (double)v.z };
+}
+
+static Vec3f to_v3f(const vfep::world::Vec3d& v) {
+    return v3((float)v.x, (float)v.y, (float)v.z);
+}
+
 static Vec3f add(Vec3f a, Vec3f b) { return {a.x+b.x, a.y+b.y, a.z+b.z}; }
 static Vec3f sub(Vec3f a, Vec3f b) { return {a.x-b.x, a.y-b.y, a.z-b.z}; }
 static Vec3f mul(Vec3f a, float s)  { return {a.x*s, a.y*s, a.z*s}; }
@@ -175,37 +189,6 @@ static void draw_line(Vec3f a, Vec3f b) {
     glVertex3f(b.x,b.y,b.z);
     glEnd();
 }
-
-static void draw_square_rail(Vec3f warehouse_half,
-                            Vec3f rack_center,
-                            Vec3f rack_half,
-                            float ceiling_drop_m,
-                            float rail_margin_m) {
-    // Rail is a rectangle in XZ plane, fixed to the ROOM (ceiling reference).
-    // Warehouse box is drawn with center at y=warehouse_half.y and half-height = warehouse_half.y,
-    // so floor is at y=0 and ceiling is at y=2*warehouse_half.y.
-    const float ceiling_y = 2.0f * warehouse_half.y;
-
-    // Rail runs 30 cm below the ceiling by default (ceiling_drop_m = 0.30).
-    const float y = ceiling_y - ceiling_drop_m;
-
-    // Rail footprint follows rack footprint (auto-resizes when rack_half changes).
-    const float x0 = rack_center.x - (rack_half.x + rail_margin_m);
-    const float x1 = rack_center.x + (rack_half.x + rail_margin_m);
-    const float z0 = rack_center.z - (rack_half.z + rail_margin_m);
-    const float z1 = rack_center.z + (rack_half.z + rail_margin_m);
-
-    Vec3f p00 = v3(x0, y, z0);
-    Vec3f p10 = v3(x1, y, z0);
-    Vec3f p11 = v3(x1, y, z1);
-    Vec3f p01 = v3(x0, y, z1);
-
-    draw_line(p00, p10);
-    draw_line(p10, p11);
-    draw_line(p11, p01);
-    draw_line(p01, p00);
-}
-
 
 static void temp_to_color(float tempC, float& r, float& g, float& b) {
     // Conservative ramp. 24C neutral -> hotter -> red.
@@ -467,10 +450,14 @@ int main(int argc, char** argv) {
     Vec3f rack_half      = v3(0.6f, 1.0f, 0.4f);
     Vec3f fire_center    = v3(0.0f, 0.6f, 0.7f);
 
-    // --- Ceiling rail rendering params (UI-only, for now) ---
-    // Rail is fixed to the room (ceiling reference): y = ceiling - rail_ceiling_drop_m
+    // --- Ceiling rail params (UI -> model config) ---
     float rail_ceiling_drop_m = 0.30f; // 30 cm below ceiling
     float rail_margin_m       = 0.25f; // rail is wider than rack footprint
+
+    // --- Ceiling rail (model-backed) ---
+    vfep::world::CeilingRail       ceiling_rail;
+    vfep::world::CeilingRailInputs ceiling_rail_in;
+    vfep::world::CeilingRailConfig ceiling_rail_cfg;
 
     // --- Spray/nozzle parameters ---
     Vec3f nozzle_pos     = v3(-2.0f, 1.5f, -2.0f);
@@ -843,7 +830,7 @@ int main(int argc, char** argv) {
             ImGui::DragFloat3("Rack Half", &rack_half.x, 0.02f, 0.05f, 5.0f);
 
             ImGui::Separator();
-            ImGui::Text("Ceiling Rail (UI-only for now)");
+            ImGui::Text("Ceiling Rail (CeilingRail model)");
             ImGui::Checkbox("Draw Ceiling Rail", &ui.draw_ceiling_rail);
             ImGui::DragFloat("Ceiling drop (m)", &rail_ceiling_drop_m, 0.01f, 0.05f, 2.0f, "%.2f");
             ImGui::DragFloat("Rail margin (m)", &rail_margin_m, 0.01f, 0.0f, 5.0f, "%.2f");
@@ -992,8 +979,35 @@ int main(int argc, char** argv) {
             }
 
             if (ui.draw_ceiling_rail) {
-                glColor3f(0.85f, 0.85f, 0.15f);
-                draw_square_rail(warehouse_half, rack_center, rack_half, rail_ceiling_drop_m, rail_margin_m);
+                // Push UI params into model config
+                ceiling_rail_cfg.drop_from_ceiling_m = (double)rail_ceiling_drop_m;
+                ceiling_rail_cfg.margin_from_rack_m  = (double)rail_margin_m;
+                ceiling_rail.setConfig(ceiling_rail_cfg);
+
+                // Push scene geometry into model inputs.
+                // NOTE: leaving ceiling_y_m = 0 uses default: ceiling_y = 2*warehouse_half.y
+                //       which matches the legacy draw_square_rail() behavior.
+                ceiling_rail_in.ceiling_y_m      = 0.0;
+                ceiling_rail_in.warehouse_half_m = to_v3d(warehouse_half);
+                ceiling_rail_in.rack_center_m    = to_v3d(rack_center);
+                ceiling_rail_in.rack_half_m      = to_v3d(rack_half);
+
+                ceiling_rail.recompute(ceiling_rail_in);
+
+                if (ceiling_rail.isValid()) {
+                    glColor3f(0.85f, 0.85f, 0.15f);
+
+                    const auto& g = ceiling_rail.geometry();
+                    const Vec3f p00 = to_v3f(g.corners_room_m[0]);
+                    const Vec3f p10 = to_v3f(g.corners_room_m[1]);
+                    const Vec3f p11 = to_v3f(g.corners_room_m[2]);
+                    const Vec3f p01 = to_v3f(g.corners_room_m[3]);
+
+                    draw_line(p00, p10);
+                    draw_line(p10, p11);
+                    draw_line(p11, p01);
+                    draw_line(p01, p00);
+                }
             }
 
             if (ui.draw_fire) {
