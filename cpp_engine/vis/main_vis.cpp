@@ -373,10 +373,14 @@ int main(int argc, char** argv) {
     imgui_gl3 = true;
 
     vfep::Simulation sim;
+    bool running = false;
+
     // --- CLI flags ---
     bool start_calib = false;
     for (int i = 1; i < argc; ++i) {
-    if (argv[i] && std::string(argv[i]) == "--calib") start_calib = true;
+        if (argv[i] && std::string(argv[i]) == "--calib") {
+            start_calib = true;
+        }
     }
 
     VisualUIState ui;

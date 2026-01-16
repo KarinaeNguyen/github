@@ -56,9 +56,9 @@ fi
 export PATH=/c/msys64/mingw64/bin:$PATH
 
 # Convert VFEP path to Windows path for start
-VFEP_WIN="$(cygpath -w "$BUILD/VFEP.exe")"
+# (removed) launching directly; no Windows path needed
 
 # Launch detached so UI stays open
-cmd.exe /c start "" "%VFEP_WIN%" --calib
+exec "$BUILD/VFEP.exe" --calib
 
 echo "UI launched."
