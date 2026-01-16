@@ -1,18 +1,17 @@
 @echo off
 setlocal
 
+REM Change this only if your MSYS2 is installed elsewhere
 set "MSYS=C:\msys64"
-set "PROJ=/d/Chemsi/cpp_engine"
-set "BUILD=build-mingw64"
 
-"%MSYS%\mingw64.exe" -defterm -here -no-start -lc ^
-"set -e; \
-cd '%PROJ%'; \
-rm -rf '%BUILD%'; \
-cmake -S . -B '%BUILD%' -G 'MinGW Makefiles' -DCMAKE_BUILD_TYPE=Release -DCHEMSI_BUILD_VIS=ON; \
-cmake --build '%BUILD%' -j; \
-echo; echo ===== Running Numeric Integrity Gate =====; \
-./'%BUILD%'/NumericIntegrity.exe; \
-echo; echo ===== Launching Visualizer (Calibration) =====; \
-export PATH=/c/msys64/mingw64/bin:$PATH; \
-./'%BUILD%'/VFEP.exe --calib"
+if not exist "%MSYS%\usr\bin\bash.exe" (
+  echo [ERROR] Cannot find MSYS2 bash at:
+  echo   "%MSYS%\usr\bin\bash.exe"
+  echo Fix: edit MSYS= in this .bat to your MSYS2 install folder.
+  pause
+  exit /b 1
+)
+
+REM Run the stable bash launcher
+"%MSYS%\usr\bin\bash.exe" -lc "bash /d/Chemsi/launch_all.sh"
+pause
