@@ -12,6 +12,10 @@
 #include "Simulation.h"
 
 #include "imgui.h"
+// ---- Docking compatibility shim (older ImGui builds do not define docking flags/APIs)
+#ifndef ImGuiConfigFlags_DockingEnable
+#define VFEP_NO_IMGUI_DOCKING 1
+#endif
 #include "implot.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
