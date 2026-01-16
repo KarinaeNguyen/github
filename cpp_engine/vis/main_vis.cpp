@@ -1,8 +1,11 @@
-// main_vis.cpp (updated UI + HUD + visualization toggles)
-// NOTE: Updated to keep fire_center locked to simulation truth via refresh_obs().
-//       All assignment-style `last_obs = sim.observe();` sites now use refresh_obs().
-//
-// Compatible with Simulation.h interface (uses hotspot_pos_m_* fields added to Observation).
+// main_vis.cpp (based on user's working version; adds square ceiling rail + long-run plot fixes)
+// - Keeps fire_center locked to simulation truth via refresh_obs() (Observation.hotspot_pos_m_*)
+// - Does NOT require any new Observation fields (no nozzle truth) or new Simulation methods
+// - Adds a UI-rendered square ceiling rail that auto-resizes with rack_half and is fixed 30 cm below ceiling
+// - Fixes "plots look broken" by:
+//     * driving simTime from sim.time_s() (authoritative sim clock)
+//     * showing Samples + time range
+//     * forcing X axis limits to the current window [t0, t1] for each plot
 
 #include <vector>
 #include <string>
@@ -173,6 +176,37 @@ static void draw_line(Vec3f a, Vec3f b) {
     glEnd();
 }
 
+static void draw_square_rail(Vec3f warehouse_half,
+                            Vec3f rack_center,
+                            Vec3f rack_half,
+                            float ceiling_drop_m,
+                            float rail_margin_m) {
+    // Rail is a rectangle in XZ plane, fixed to the ROOM (ceiling reference).
+    // Warehouse box is drawn with center at y=warehouse_half.y and half-height = warehouse_half.y,
+    // so floor is at y=0 and ceiling is at y=2*warehouse_half.y.
+    const float ceiling_y = 2.0f * warehouse_half.y;
+
+    // Rail runs 30 cm below the ceiling by default (ceiling_drop_m = 0.30).
+    const float y = ceiling_y - ceiling_drop_m;
+
+    // Rail footprint follows rack footprint (auto-resizes when rack_half changes).
+    const float x0 = rack_center.x - (rack_half.x + rail_margin_m);
+    const float x1 = rack_center.x + (rack_half.x + rail_margin_m);
+    const float z0 = rack_center.z - (rack_half.z + rail_margin_m);
+    const float z1 = rack_center.z + (rack_half.z + rail_margin_m);
+
+    Vec3f p00 = v3(x0, y, z0);
+    Vec3f p10 = v3(x1, y, z0);
+    Vec3f p11 = v3(x1, y, z1);
+    Vec3f p01 = v3(x0, y, z1);
+
+    draw_line(p00, p10);
+    draw_line(p10, p11);
+    draw_line(p11, p01);
+    draw_line(p01, p00);
+}
+
+
 static void temp_to_color(float tempC, float& r, float& g, float& b) {
     // Conservative ramp. 24C neutral -> hotter -> red.
     float t = clampf((tempC - 24.0f) / (120.0f - 24.0f), 0.0f, 1.0f);
@@ -306,7 +340,41 @@ struct VisualUIState {
     bool draw_nozzle = true;
     bool draw_spray = true;
     bool draw_hit_marker = true;
+
+    bool draw_ceiling_rail = true;
 };
+
+static void plot_line_with_xlimits(const char* title,
+                                  const char* label,
+                                  const double* xs,
+                                  const double* ys,
+                                  int count,
+                                  double t0,
+                                  double t1)
+{
+    if (count <= 1)
+        return;
+
+    if (ImPlot::BeginPlot(title)) {
+
+        // --- X-axis handling (robust across ImPlot versions) ---
+#if defined(ImAxis_X1)
+        // ImPlot >= 0.16
+        ImPlot::SetupAxisLimits(ImAxis_X1, t0, t1, ImGuiCond_Always);
+#elif defined(ImPlotAxis_X1)
+        // Transitional versions
+        ImPlot::SetupAxisLimits(ImPlotAxis_X1, t0, t1, ImGuiCond_Always);
+#else
+        // Very old ImPlot: DO NOT set limits (auto-fit fallback)
+        // This avoids calling deprecated/nonexistent APIs.
+#endif
+
+        // --- Plot data ---
+        ImPlot::PlotLine(label, xs, ys, count);
+
+        ImPlot::EndPlot();
+    }
+}
 
 int main(int argc, char** argv) {
     glfwSetErrorCallback(glfw_error_callback);
@@ -399,6 +467,11 @@ int main(int argc, char** argv) {
     Vec3f rack_half      = v3(0.6f, 1.0f, 0.4f);
     Vec3f fire_center    = v3(0.0f, 0.6f, 0.7f);
 
+    // --- Ceiling rail rendering params (UI-only, for now) ---
+    // Rail is fixed to the room (ceiling reference): y = ceiling - rail_ceiling_drop_m
+    float rail_ceiling_drop_m = 0.30f; // 30 cm below ceiling
+    float rail_margin_m       = 0.25f; // rail is wider than rack footprint
+
     // --- Spray/nozzle parameters ---
     Vec3f nozzle_pos     = v3(-2.0f, 1.5f, -2.0f);
     Vec3f nozzle_dir     = v3(0.7f, -0.15f, 0.7f);
@@ -474,6 +547,7 @@ int main(int argc, char** argv) {
     };
 
     vfep::Observation last_obs = sim.observe();
+    simTime = sim.time_s();
     push_sample(simTime, last_obs);
 
     // Keep UI fire marker locked to simulation truth.
@@ -484,6 +558,7 @@ int main(int argc, char** argv) {
     // One canonical refresh point so we cannot miss an update site.
     auto refresh_obs = [&]() {
         last_obs = sim.observe();
+        simTime = sim.time_s();
         fire_center = v3((float)last_obs.hotspot_pos_m_x,
                          (float)last_obs.hotspot_pos_m_y,
                          (float)last_obs.hotspot_pos_m_z);
@@ -493,12 +568,12 @@ int main(int argc, char** argv) {
     if (start_calib) {
         sim.enableCalibrationMode(true);
         running = false;
-        simTime = 0.0;
+        refresh_obs();
         accum_s = 0.0;
+
         t_hist.clear(); T_hist.clear(); HRR_hist.clear(); O2_hist.clear();
         EffExp_hist.clear(); KD_hist.clear(); KDTarget_hist.clear();
 
-        refresh_obs();
         push_sample(simTime, last_obs);
         last_substeps = 0;
         dropped_accum = false;
@@ -526,7 +601,6 @@ int main(int argc, char** argv) {
 
             while (accum_s >= dt && substeps < kMaxSubstepsPerFrame && !sim.isConcluded()) {
                 sim.step(dt);
-                simTime += dt;
                 refresh_obs();
                 push_sample(simTime, last_obs);
                 accum_s -= dt;
@@ -605,7 +679,6 @@ int main(int argc, char** argv) {
             if (ImGui::Button("Step")) {
                 if (!sim.isConcluded()) {
                     sim.step(dt);
-                    simTime += dt;
                     refresh_obs();
                     push_sample(simTime, last_obs);
                     accum_s = 0.0;
@@ -635,13 +708,13 @@ int main(int argc, char** argv) {
             if (ImGui::Checkbox("Calibration Mode", &calib_mode_ui)) {
                 sim.enableCalibrationMode(calib_mode_ui);
                 running = false;
-                simTime = 0.0;
+
+                refresh_obs();
                 accum_s = 0.0;
 
                 t_hist.clear(); T_hist.clear(); HRR_hist.clear(); O2_hist.clear();
                 EffExp_hist.clear(); KD_hist.clear(); KDTarget_hist.clear();
 
-                refresh_obs();
                 push_sample(simTime, last_obs);
                 last_substeps = 0;
                 dropped_accum = false;
@@ -664,13 +737,13 @@ int main(int argc, char** argv) {
             if (ImGui::Button("Run Verification Test")) {
                 last_verify_pass = sim.runVerificationTest((vfep::VerificationTestId)verify_test_idx);
                 running = false;
-                simTime = 0.0;
+
+                refresh_obs();
                 accum_s = 0.0;
 
                 t_hist.clear(); T_hist.clear(); HRR_hist.clear(); O2_hist.clear();
                 EffExp_hist.clear(); KD_hist.clear(); KDTarget_hist.clear();
 
-                refresh_obs();
                 push_sample(simTime, last_obs);
                 last_substeps = 0;
                 dropped_accum = false;
@@ -707,13 +780,13 @@ int main(int argc, char** argv) {
             if (ImGui::Button("Load Scenario")) {
                 sim.resetToScenario((vfep::DemoScenario)scenario_idx, (vfep::AgentType)agent_idx);
                 running = false;
-                simTime = 0.0;
+
+                refresh_obs();
                 accum_s = 0.0;
 
                 t_hist.clear(); T_hist.clear(); HRR_hist.clear(); O2_hist.clear();
                 EffExp_hist.clear(); KD_hist.clear(); KDTarget_hist.clear();
 
-                refresh_obs();
                 push_sample(simTime, last_obs);
 
                 last_substeps = 0;
@@ -726,13 +799,13 @@ int main(int argc, char** argv) {
             if (ImGui::Button("Reset Scenario (Legacy)")) {
                 sim.resetToDataCenterRackScenario();
                 running = false;
-                simTime = 0.0;
+
+                refresh_obs();
                 accum_s = 0.0;
 
                 t_hist.clear(); T_hist.clear(); HRR_hist.clear(); O2_hist.clear();
                 EffExp_hist.clear(); KD_hist.clear(); KDTarget_hist.clear();
 
-                refresh_obs();
                 push_sample(simTime, last_obs);
 
                 last_substeps = 0;
@@ -769,7 +842,14 @@ int main(int argc, char** argv) {
             ImGui::DragFloat3("Rack Center", &rack_center.x, 0.05f);
             ImGui::DragFloat3("Rack Half", &rack_half.x, 0.02f, 0.05f, 5.0f);
 
+            ImGui::Separator();
+            ImGui::Text("Ceiling Rail (UI-only for now)");
+            ImGui::Checkbox("Draw Ceiling Rail", &ui.draw_ceiling_rail);
+            ImGui::DragFloat("Ceiling drop (m)", &rail_ceiling_drop_m, 0.01f, 0.05f, 2.0f, "%.2f");
+            ImGui::DragFloat("Rail margin (m)", &rail_margin_m, 0.01f, 0.0f, 5.0f, "%.2f");
+
             // NOTE: fire_center is now sim-truth; dragging here will be overwritten on next refresh_obs().
+            ImGui::Separator();
             ImGui::DragFloat3("Fire Center (truth)", &fire_center.x, 0.05f);
 
             ImGui::Separator();
@@ -826,29 +906,42 @@ int main(int argc, char** argv) {
             const int count = N - start;
 
             if (count > 1) {
-                if (ImPlot::BeginPlot("Temperature (K)")) {
-                    ImPlot::PlotLine("T_K", t_hist.data() + start, T_hist.data() + start, count);
-                    ImPlot::EndPlot();
-                }
-                if (ImPlot::BeginPlot("HRR (W)")) {
-                    ImPlot::PlotLine("HRR_W", t_hist.data() + start, HRR_hist.data() + start, count);
-                    ImPlot::EndPlot();
-                }
-                if (ImPlot::BeginPlot("Effective Exposure (kg)")) {
-                    ImPlot::PlotLine("EffExp_kg", t_hist.data() + start, EffExp_hist.data() + start, count);
-                    ImPlot::EndPlot();
-                }
+                const double t0 = t_hist[start];
+                const double t1 = t_hist[start + count - 1];
+                ImGui::Text("Samples: %d   Window: [%0.2f, %0.2f] s", N, t0, t1);
+
+                plot_line_with_xlimits("Temperature (K)", "T_K",
+                                       t_hist.data() + start, T_hist.data() + start, count, t0, t1);
+
+                plot_line_with_xlimits("HRR (W)", "HRR_W",
+                                       t_hist.data() + start, HRR_hist.data() + start, count, t0, t1);
+
+                plot_line_with_xlimits("Effective Exposure (kg)", "EffExp_kg",
+                                       t_hist.data() + start, EffExp_hist.data() + start, count, t0, t1);
+
                 if (ImPlot::BeginPlot("Knockdown (0-1)")) {
-                    ImPlot::PlotLine("KD", t_hist.data() + start, KD_hist.data() + start, count);
-                    ImPlot::PlotLine("KD_target", t_hist.data() + start, KDTarget_hist.data() + start, count);
-                    ImPlot::EndPlot();
-                }
-                if (ImPlot::BeginPlot("O2 (vol %)")) {
-                    ImPlot::PlotLine("O2", t_hist.data() + start, O2_hist.data() + start, count);
-                    ImPlot::EndPlot();
-                }
+
+                #if defined(ImAxis_X1)
+                // ImPlot >= 0.16
+                    ImPlot::SetupAxisLimits(ImAxis_X1, t0, t1, ImGuiCond_Always);
+                    #elif defined(ImPlotAxis_X1)
+                    // Transitional versions
+                    ImPlot::SetupAxisLimits(ImPlotAxis_X1, t0, t1, ImGuiCond_Always);
+                    #else
+                    // Very old ImPlot: no explicit axis control (auto-fit fallback)
+                #endif
+
+    ImPlot::PlotLine("KD", t_hist.data() + start, KD_hist.data() + start, count);
+    ImPlot::PlotLine("KD_target", t_hist.data() + start, KDTarget_hist.data() + start, count);
+
+    ImPlot::EndPlot();
+}
+
+                plot_line_with_xlimits("O2 (vol %)", "O2",
+                                       t_hist.data() + start, O2_hist.data() + start, count, t0, t1);
             } else {
-                ImGui::TextUnformatted("No data yet.");
+                ImGui::Text("Samples: %d", N);
+                ImGui::TextUnformatted("No data yet (press Run or Step).");
             }
 
             ImGui::End();
@@ -896,6 +989,11 @@ int main(int argc, char** argv) {
 
                 glColor3f(0.05f, 0.05f, 0.05f);
                 draw_wire_box(rack_center, rack_half);
+            }
+
+            if (ui.draw_ceiling_rail) {
+                glColor3f(0.85f, 0.85f, 0.15f);
+                draw_square_rail(warehouse_half, rack_center, rack_half, rail_ceiling_drop_m, rail_margin_m);
             }
 
             if (ui.draw_fire) {
