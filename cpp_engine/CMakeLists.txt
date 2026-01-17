@@ -27,6 +27,8 @@ set(CHEMSI_CORE_SRCS
   src/Aerodynamics.cpp
   src/Suppression.cpp
   src/Ventilation.cpp
+  world/ceiling_rail.cpp
+  world/rail_mounted_nozzle.cpp
 )
 
 # Only compile the gRPC server implementation when enabled.
