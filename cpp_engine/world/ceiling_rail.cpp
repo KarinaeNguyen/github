@@ -20,6 +20,11 @@
 namespace vfep {
 namespace world {
 
+// Numeric stability thresholds
+static constexpr double kEpsilon = 1e-12;
+static constexpr double kMinGeometry = 1e-6;  // Minimum dimension before considering degenerate
+static constexpr double kMinPerimeter = 1e-12; // Minimum perimeter for valid rail
+
 static inline double clampd(double v, double lo, double hi) {
     return (v < lo) ? lo : (v > hi) ? hi : v;
 }
@@ -40,7 +45,7 @@ static inline Vec3d sub_v3(const Vec3d& a, const Vec3d& b) {
 
 static inline Vec3d norm_xz(const Vec3d& v, const Vec3d& fallback) {
     const double l2 = v.x * v.x + v.z * v.z;
-    if (l2 <= 1e-24) {
+    if (l2 <= kEpsilon * kEpsilon) {
         return fallback;
     }
     const double inv_l = 1.0 / std::sqrt(l2);
@@ -48,13 +53,35 @@ static inline Vec3d norm_xz(const Vec3d& v, const Vec3d& fallback) {
 }
 
 void CeilingRail::recompute(const CeilingRailInputs& in) {
-    // 1) Determine ceiling reference.
-    const double ceiling_y = (in.ceiling_y_m > 0.0)
+    // Input validation
+    valid_ = false;
+    
+    // Validate rack has positive dimensions
+    if (in.rack_half_m.x <= kMinGeometry || in.rack_half_m.z <= kMinGeometry) {
+        return;  // Degenerate rack
+    }
+    
+    // Validate warehouse has positive height
+    if (in.warehouse_half_m.y <= kMinGeometry) {
+        return;  // Degenerate warehouse
+    }
+    
+    // Ceiling height must be positive
+    double ceiling_y = (in.ceiling_y_m > 0.0)
         ? in.ceiling_y_m
         : (2.0 * in.warehouse_half_m.y);
-
-    // 2) Rail height.
+    
+    if (ceiling_y <= 0.0) {
+        return;  // Invalid ceiling height
+    }
+    
+    // Rail height is ceiling minus drop (should be positive)
     geo_.y_m = ceiling_y - cfg_.drop_from_ceiling_m;
+    
+    // Allow rail slightly below floor for visualization, but reject extreme cases
+    if (std::abs(geo_.y_m) > 1000.0) {
+        return;  // Unreasonable geometry
+    }
 
     // 3) Extents driven by rack footprint (matches main_vis.cpp).
     geo_.x0_m = in.rack_center_m.x - (in.rack_half_m.x + cfg_.margin_from_rack_m);
@@ -62,7 +89,7 @@ void CeilingRail::recompute(const CeilingRailInputs& in) {
     geo_.z0_m = in.rack_center_m.z - (in.rack_half_m.z + cfg_.margin_from_rack_m);
     geo_.z1_m = in.rack_center_m.z + (in.rack_half_m.z + cfg_.margin_from_rack_m);
 
-    // Ensure canonical ordering (x0<=x1, z0<=z1). This is a no-op for valid inputs.
+    // Ensure canonical ordering (x0<=x1, z0<=z1).
     if (geo_.x0_m > geo_.x1_m) std::swap(geo_.x0_m, geo_.x1_m);
     if (geo_.z0_m > geo_.z1_m) std::swap(geo_.z0_m, geo_.z1_m);
 
@@ -83,8 +110,8 @@ void CeilingRail::recompute(const CeilingRailInputs& in) {
 
     geo_.perimeter_m = 2.0 * (len_x + len_z);
 
-    // Valid if we have any perimeter at all.
-    valid_ = (geo_.perimeter_m > 1e-12);
+    // Valid only if we have meaningful perimeter.
+    valid_ = (geo_.perimeter_m > kMinPerimeter);
 }
 
 double CeilingRail::wrapS(double s_m) const {
@@ -95,7 +122,7 @@ double CeilingRail::wrapS(double s_m) const {
     double w = std::fmod(s_m, p);
     if (w < 0.0) w += p;
     // Guard against fmod returning p due to numeric edge cases.
-    if (w >= p) w = 0.0;
+    if (w >= p - kEpsilon) w = 0.0;
     return w;
 }
 
@@ -129,7 +156,7 @@ static inline int segment_from_s(const CeilingRailGeometry& g, double s_wrapped,
         // For the last segment, always select it if not selected earlier.
         const bool is_last = (seg == CeilingRailGeometry::kNumSegments - 1);
         if (is_last || s_wrapped <= next) {
-            if (L > 1e-24) {
+            if (L > kEpsilon) {
                 u01 = (s_wrapped - accum) / L;
                 u01 = clampd(u01, 0.0, 1.0);
             } else {

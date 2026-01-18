@@ -1,9 +1,19 @@
 #include "rail_mounted_nozzle.h"
 
 #include <algorithm>
+#include <cmath>
 
 namespace vfep {
 namespace world {
+
+// Numeric stability thresholds
+static constexpr double kEpsilon = 1e-12;
+static constexpr double kMinVecLen = 1e-12;
+static constexpr double kPI = 3.14159265358979323846;
+
+static inline double clamp(double x, double lo, double hi) {
+    return (x < lo) ? lo : (x > hi) ? hi : x;
+}
 
 static inline double clamp01(double x) {
     return (x < 0.0) ? 0.0 : (x > 1.0) ? 1.0 : x;
@@ -29,13 +39,13 @@ static inline double len(const Vec3d& a) { return std::sqrt(dot(a,a)); }
 
 static inline Vec3d norm(const Vec3d& a) {
     const double l = len(a);
-    return (l > 1e-12) ? mul(a, 1.0 / l) : v3(0.0, 0.0, 0.0);
+    return (l > kMinVecLen) ? mul(a, 1.0 / l) : v3(0.0, 0.0, 0.0);
 }
 
 // Rodrigues rotation about unit axis.
 static inline Vec3d rotate_axis_angle(const Vec3d& v, const Vec3d& axis_unit, double ang_rad) {
     const Vec3d a = norm(axis_unit);
-    if (len(a) < 1e-12) return v;
+    if (len(a) < kMinVecLen) return v;
     const double c = std::cos(ang_rad);
     const double s = std::sin(ang_rad);
     // v' = v*c + (a×v)*s + a*(a·v)*(1-c)
@@ -71,7 +81,7 @@ static bool rail_point_and_tangent(const CeilingRailGeometry& g, double s_0_1, V
 
     auto seg = [&](const Vec3d& a, const Vec3d& d, double Li) -> bool {
         if (Li <= 1e-12) return false;
-        const double t = std::clamp(dist / Li, 0.0, 1.0);
+        const double t = clamp(dist / Li, 0.0, 1.0);
         out_p = add(a, mul(d, t));
         out_tan_unit = norm(d);
         return true;
@@ -109,8 +119,16 @@ void RailMountedNozzle::recompute(const Inputs& in) {
     if (len(right0) < 1e-12) right0 = v3(1.0, 0.0, 0.0);
 
     // Apply yaw about world up, then pitch about local right (after yaw).
-    const double yaw_rad   = in.yaw_deg   * (3.14159265358979323846 / 180.0);
-    const double pitch_rad = in.pitch_deg * (3.14159265358979323846 / 180.0);
+    // Clamp angles to prevent numerical issues from extreme values
+    double yaw_rad   = in.yaw_deg   * (kPI / 180.0);
+    double pitch_rad = in.pitch_deg * (kPI / 180.0);
+    
+    // Normalize angles to [-pi, pi] range for stability
+    const double k2PI = 2.0 * kPI;
+    while (yaw_rad > kPI) yaw_rad -= k2PI;
+    while (yaw_rad < -kPI) yaw_rad += k2PI;
+    while (pitch_rad > kPI) pitch_rad -= k2PI;
+    while (pitch_rad < -kPI) pitch_rad += k2PI;
 
     const Vec3d fwd1 = rotate_axis_angle(fwd0, up, yaw_rad);
     Vec3d right1 = norm(cross(up, fwd1));
@@ -123,7 +141,7 @@ void RailMountedNozzle::recompute(const Inputs& in) {
     pose_.rail_tangent_unit_room = fwd0;
 
     pose_.nozzle_pos_room_m      = nozzle_p;
-    pose_.spray_dir_unit_room    = (len(spray_dir) > 1e-12) ? spray_dir : fwd1;
+    pose_.spray_dir_unit_room    = (len(spray_dir) > kMinVecLen) ? spray_dir : fwd1;
 
     pose_.up_unit_room           = up;
     pose_.right_unit_room        = right1;

@@ -416,6 +416,9 @@ public:
     // Must be side-effect free and NaN-safe for visualizer usage.
     Observation observe() const;
 
+    // Accessor for current nozzle position (meters, world frame)
+    const Vec3d& getNozzlePos_m() const { return nozzle_pos_m_; }
+
     bool isConcluded() const noexcept { return concluded_; }
 
     // Step 1C: lifecycle state inspection (read-only)

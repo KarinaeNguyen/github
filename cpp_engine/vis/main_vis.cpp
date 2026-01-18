@@ -447,11 +447,11 @@ int main(int argc, char** argv) {
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 #endif
 
-    // Increase font size for better readability
-    io.Fonts->AddFontFromFileTTF("C:/Windows/Fonts/segoeui.ttf", 16.0f);
+    // Increase font size for better readability (19pt for better visibility)
+    io.Fonts->AddFontFromFileTTF("C:/Windows/Fonts/segoeui.ttf", 19.0f);
     if (io.Fonts->Fonts.Size == 1) {
         // If font loading fails, use default with scaling
-        ImGui::GetStyle().ScaleAllSizes(1.4f);
+        ImGui::GetStyle().ScaleAllSizes(1.5f);
     }
 
     ImPlot::CreateContext();
@@ -817,9 +817,9 @@ int main(int argc, char** argv) {
             }
         }
 
-        // Enhanced Control Console (Terminal Style)
+        // Enhanced Control Console with Tabbed Interface
         if (ui.show_controls) {
-            ImGui::SetNextWindowSize(ImVec2(500, 700), ImGuiCond_FirstUseEver);
+            ImGui::SetNextWindowSize(ImVec2(600, 800), ImGuiCond_FirstUseEver);
             ImGui::Begin(">> CONTROL CONSOLE", &ui.show_controls);
             
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.2f, 1.0f, 0.2f, 1.0f));  // Terminal green
@@ -830,122 +830,206 @@ int main(int argc, char** argv) {
             const ImVec4 cmd_header = ImVec4(0.0f, 1.0f, 0.0f, 1.0f);
             const ImVec4 cmd_subsec = ImVec4(0.0f, 0.8f, 1.0f, 1.0f);
             
-            // Transport Control
-            ImGui::TextColored(cmd_header, "[EXEC] Transport Controls");
-            ImGui::Separator();
-            
-            if (ImGui::Button(running ? "  PAUSE  " : "   RUN   ", ImVec2(100, 0))) running = !running;
-            ImGui::SameLine();
-            if (ImGui::Button("  STEP  ", ImVec2(100, 0))) {
-                if (!sim.isConcluded()) {
-                    sim.step(dt);
-                    refresh_obs();
-                    push_sample(simTime, last_obs);
-                    accum_s = 0.0;
-                    last_substeps = 1;
-                    dropped_accum = false;
+            // === TABBED INTERFACE ===
+            if (ImGui::BeginTabBar("ControlTabs", ImGuiTabBarFlags_None)) {
+                
+                // ===== TAB 1: EXECUTION =====
+                if (ImGui::BeginTabItem("  EXEC  ")) {
+                    ImGui::TextColored(cmd_header, "[EXEC] Transport Controls");
+                    ImGui::Separator();
+                    
+                    if (ImGui::Button(running ? "  PAUSE  " : "   RUN   ", ImVec2(100, 0))) running = !running;
+                    ImGui::SameLine();
+                    if (ImGui::Button("  STEP  ", ImVec2(100, 0))) {
+                        if (!sim.isConcluded()) {
+                            sim.step(dt);
+                            refresh_obs();
+                            push_sample(simTime, last_obs);
+                            accum_s = 0.0;
+                            last_substeps = 1;
+                            dropped_accum = false;
+                        }
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::Button(" RESET ", ImVec2(100, 0))) {
+                        sim.resetToDataCenterRackScenario();
+                        running = false;
+                        refresh_obs();
+                        accum_s = 0.0;
+                        t_hist.clear(); T_hist.clear(); HRR_hist.clear(); O2_hist.clear();
+                        EffExp_hist.clear(); KD_hist.clear(); KDTarget_hist.clear();
+                        push_sample(simTime, last_obs);
+                        last_substeps = 0;
+                        dropped_accum = false;
+                    }
+                    
+                    ImGui::Spacing();
+                    float dt_slider = (float)dt;
+                    ImGui::SliderFloat("Speed (1.0x)", &dt_slider, 0.005f, 0.200f, "%.3f s");
+                    dt = (double)dt_slider;
+                    ImGui::Spacing();
+                    
+                    // Scenario Selection
+                    ImGui::TextColored(cmd_header, "[SCENARIO] Load Configuration");
+                    ImGui::Separator();
+                    
+                    static int scenario_idx = 0;
+                    static int agent_idx = 0;
+                    
+                    const char* scenario_names[] = {"Direct vs Glance", "Occlusion Wall", "Shielding Stack", "Mixed"};
+                    ImGui::Combo(">> Scenario", &scenario_idx, scenario_names, IM_ARRAYSIZE(scenario_names));
+                    
+                    const char* agent_names[] = {"Clean Agent", "Dry Chemical", "CO2-like"};
+                    ImGui::Combo(">> Agent", &agent_idx, agent_names, IM_ARRAYSIZE(agent_names));
+                    
+                    if (ImGui::Button("[ LOAD ]", ImVec2(-1, 0))) {
+                        sim.resetToScenario((vfep::DemoScenario)scenario_idx, (vfep::AgentType)agent_idx);
+                        running = false;
+                        refresh_obs();
+                        accum_s = 0.0;
+                        t_hist.clear(); T_hist.clear(); HRR_hist.clear(); O2_hist.clear();
+                        EffExp_hist.clear(); KD_hist.clear(); KDTarget_hist.clear();
+                        push_sample(simTime, last_obs);
+                        last_substeps = 0;
+                        dropped_accum = false;
+                    }
+                    ImGui::Spacing();
+                    
+                    // Commands
+                    ImGui::TextColored(cmd_header, "[COMMAND] System Actions");
+                    ImGui::Separator();
+                    
+                    if (ImGui::Button("[ IGNITE ]", ImVec2(-1, 25))) {
+                        if (!sim.isConcluded()) sim.commandIgniteOrIncreasePyrolysis();
+                    }
+                    if (ImGui::Button("[ START SUPPRESSION ]", ImVec2(-1, 25))) {
+                        if (!sim.isConcluded()) sim.commandStartSuppression();
+                    }
+                    ImGui::Spacing();
+                    
+                    // Status Summary
+                    ImGui::TextColored(cmd_header, "[STATUS] Current State");
+                    ImGui::Separator();
+                    
+                    ImGui::Text("Time:        %.2f s", simTime);
+                    ImGui::Text("Regime:      %s", suppression_regime_text(last_obs.suppression_regime));
+                    ImGui::Text("HRR eff:     %.1f kW", 1e-3 * (double)last_obs.effective_HRR_W);
+                    ImGui::Text("Knockdown:   %.1f %%", 100.0 * (double)last_obs.knockdown_0_1);
+                    ImGui::Text("Hit eff:     %.1f %%", 100.0 * (double)last_obs.hit_efficiency_0_1);
+                    ImGui::Text("Agent flow:  %.4f kg/s", (double)last_obs.agent_mdot_kgps);
+                    
+                    if (last_substeps > 0) {
+                        ImGui::TextColored(ImVec4(0.0f, 1.0f, 1.0f, 1.0f), "Substeps:    %d", last_substeps);
+                    }
+                    
+                    ImGui::EndTabItem();
                 }
+                
+                // ===== TAB 2: NOZZLE =====
+                if (ImGui::BeginTabItem("  NOZZLE  ")) {
+                    ImGui::TextColored(cmd_header, "[NOZZLE] Pose Control");
+                    ImGui::Separator();
+                    
+                    // Manual pose controls only available when override is OFF (not using rail)
+                    if (viz_override_nozzle_pose) {
+                        ImGui::TextDisabled("Position locked to rail (s=%.2f)", viz_nozzle_s_0_1);
+                        ImGui::TextDisabled("Use sliders below to control nozzle");
+                    } else {
+                        ImGui::DragFloat3("Position (m)##noz", &nozzle_pos.x, 0.05f);
+                        ImGui::DragFloat3("Direction##noz", &nozzle_dir.x, 0.02f);
+                        
+                        if (ImGui::Button("[ APPLY NOZZLE ]", ImVec2(-1, 0))) {
+                            sim.setNozzlePose({(double)nozzle_pos.x, (double)nozzle_pos.y, (double)nozzle_pos.z},
+                                              {(double)nozzle_dir.x, (double)nozzle_dir.y, (double)nozzle_dir.z});
+                            refresh_obs();
+                        }
+                    }
+                    ImGui::Spacing();
+                    
+                    ImGui::TextColored(cmd_header, "[DEBUG] Rail Parameters");
+                    ImGui::Separator();
+                    ImGui::DragFloat("Rail drop (m)", &rail_ceiling_drop_m, 0.01f, 0.0f, 2.0f, "%.2f");
+                    ImGui::DragFloat("Rail margin (m)", &rail_margin_m, 0.01f, 0.0f, 2.0f, "%.2f");
+                    ImGui::DragFloat("Nozzle drop (m)", &nozzle_drop_from_rail_m, 0.01f, 0.0f, 2.0f, "%.2f");
+                    
+                    ImGui::Checkbox("Override nozzle pose", &viz_override_nozzle_pose);
+                    if (viz_override_nozzle_pose) {
+                        ImGui::SliderFloat("Nozzle s (0-1)", &viz_nozzle_s_0_1, 0.0f, 1.0f, "%.3f");
+                        ImGui::SliderFloat("Nozzle pan (deg)", &viz_nozzle_pan_deg, -180.0f, 180.0f, "%.1f");
+                        ImGui::SliderFloat("Nozzle tilt (deg)", &viz_nozzle_tilt_deg, -90.0f, 90.0f, "%.1f");
+                    }
+                    
+                    ImGui::Text("Rail valid: %s", ceiling_rail.isValid() ? "YES" : "NO");
+                    ImGui::Text("Nozzle valid: %s", rail_nozzle.isValid() ? "YES" : "NO");
+                    
+                    ImGui::EndTabItem();
+                }
+                
+                // ===== TAB 3: VISUALIZATION =====
+                if (ImGui::BeginTabItem("  VIZ  ")) {
+                    ImGui::TextColored(cmd_header, "[VISUALIZATION] Draw Layers");
+                    ImGui::Separator();
+                    
+                    ImGui::Checkbox("Warehouse", &ui.draw_warehouse);
+                    ImGui::Checkbox("Rack", &ui.draw_rack);
+                    ImGui::Checkbox("Fire volume", &ui.draw_fire);
+                    ImGui::Checkbox("Fire sectors", &ui.draw_fire_sectors);
+                    ImGui::Checkbox("Ceiling Rail", &ui.draw_ceiling_rail);
+                    ImGui::Checkbox("Nozzle marker", &ui.draw_nozzle);
+                    ImGui::Checkbox("Spray cone", &ui.draw_spray);
+                    ImGui::Checkbox("Hit marker", &ui.draw_hit_marker);
+                    ImGui::Checkbox("Draft arrow", &ui.draw_draft);
+                    
+                    ImGui::EndTabItem();
+                }
+                
+                // ===== TAB 4: PLOTS =====
+                if (ImGui::BeginTabItem("  PLOTS  ")) {
+                    const int N = (int)t_hist.size();
+                    const int start = (N > kPlotWindowN) ? (N - kPlotWindowN) : 0;
+                    const int count = N - start;
+
+                    if (count > 1) {
+                        const double t0 = t_hist[start];
+                        const double t1 = t_hist[start + count - 1];
+                        ImGui::Text("Samples: %d   Window: [%0.2f, %0.2f] s", N, t0, t1);
+                        ImGui::Separator();
+
+                        plot_line_with_xlimits("Temperature (K)", "T_K",
+                                               t_hist.data() + start, T_hist.data() + start, count, t0, t1);
+
+                        plot_line_with_xlimits("HRR (W)", "HRR_W",
+                                               t_hist.data() + start, HRR_hist.data() + start, count, t0, t1);
+
+                        plot_line_with_xlimits("Effective Exposure (kg)", "EffExp_kg",
+                                               t_hist.data() + start, EffExp_hist.data() + start, count, t0, t1);
+
+                        if (ImPlot::BeginPlot("Knockdown (0-1)")) {
+                            #if defined(ImAxis_X1)
+                            ImPlot::SetupAxisLimits(ImAxis_X1, t0, t1, ImGuiCond_Always);
+                            #elif defined(ImPlotAxis_X1)
+                            ImPlot::SetupAxisLimits(ImPlotAxis_X1, t0, t1, ImGuiCond_Always);
+                            #else
+                            #endif
+
+                            ImPlot::PlotLine("KD", t_hist.data() + start, KD_hist.data() + start, count);
+                            ImPlot::PlotLine("KD_target", t_hist.data() + start, KDTarget_hist.data() + start, count);
+
+                            ImPlot::EndPlot();
+                        }
+
+                        plot_line_with_xlimits("O2 (vol %)", "O2",
+                                               t_hist.data() + start, O2_hist.data() + start, count, t0, t1);
+                    } else {
+                        ImGui::Text("Samples: %d", N);
+                        ImGui::TextUnformatted("No data yet (press Run or Step).");
+                    }
+                    
+                    ImGui::EndTabItem();
+                }
+                
+                ImGui::EndTabBar();
             }
-            ImGui::SameLine();
-            if (ImGui::Button(" RESET ", ImVec2(100, 0))) {
-                sim.resetToDataCenterRackScenario();
-                running = false;
-                refresh_obs();
-                accum_s = 0.0;
-                t_hist.clear(); T_hist.clear(); HRR_hist.clear(); O2_hist.clear();
-                EffExp_hist.clear(); KD_hist.clear(); KDTarget_hist.clear();
-                push_sample(simTime, last_obs);
-                last_substeps = 0;
-                dropped_accum = false;
-            }
-            
-            ImGui::Spacing();
-            float dt_slider = (float)dt;
-            ImGui::SliderFloat("Speed (1.0x)", &dt_slider, 0.005f, 0.200f, "%.3f s");
-            dt = (double)dt_slider;
-            ImGui::Spacing();
-            
-            // Scenario Selection
-            ImGui::TextColored(cmd_header, "[SCENARIO] Load Configuration");
-            ImGui::Separator();
-            
-            static int scenario_idx = 0;
-            static int agent_idx = 0;
-            
-            const char* scenario_names[] = {"Direct vs Glance", "Occlusion Wall", "Shielding Stack", "Mixed"};
-            ImGui::Combo(">> Scenario", &scenario_idx, scenario_names, IM_ARRAYSIZE(scenario_names));
-            
-            const char* agent_names[] = {"Clean Agent", "Dry Chemical", "CO2-like"};
-            ImGui::Combo(">> Agent", &agent_idx, agent_names, IM_ARRAYSIZE(agent_names));
-            
-            if (ImGui::Button("[ LOAD ]", ImVec2(-1, 0))) {
-                sim.resetToScenario((vfep::DemoScenario)scenario_idx, (vfep::AgentType)agent_idx);
-                running = false;
-                refresh_obs();
-                accum_s = 0.0;
-                t_hist.clear(); T_hist.clear(); HRR_hist.clear(); O2_hist.clear();
-                EffExp_hist.clear(); KD_hist.clear(); KDTarget_hist.clear();
-                push_sample(simTime, last_obs);
-                last_substeps = 0;
-                dropped_accum = false;
-            }
-            ImGui::Spacing();
-            
-            // Commands
-            ImGui::TextColored(cmd_header, "[COMMAND] System Actions");
-            ImGui::Separator();
-            
-            if (ImGui::Button("[ IGNITE ]", ImVec2(-1, 25))) {
-                if (!sim.isConcluded()) sim.commandIgniteOrIncreasePyrolysis();
-            }
-            if (ImGui::Button("[ START SUPPRESSION ]", ImVec2(-1, 25))) {
-                if (!sim.isConcluded()) sim.commandStartSuppression();
-            }
-            ImGui::Spacing();
-            
-            // Nozzle Control (for judges to interact)
-            ImGui::TextColored(cmd_header, "[NOZZLE] Pose Control");
-            ImGui::Separator();
-            
-            ImGui::DragFloat3("Position (m)##noz", &nozzle_pos.x, 0.05f);
-            ImGui::DragFloat3("Direction##noz", &nozzle_dir.x, 0.02f);
-            
-            if (ImGui::Button("[ APPLY NOZZLE ]", ImVec2(-1, 0))) {
-                sim.setNozzlePose({(double)nozzle_pos.x, (double)nozzle_pos.y, (double)nozzle_pos.z},
-                                  {(double)nozzle_dir.x, (double)nozzle_dir.y, (double)nozzle_dir.z});
-                refresh_obs();
-            }
-            ImGui::Spacing();
-            
-            // Status Summary
-            ImGui::TextColored(cmd_header, "[STATUS] Current State");
-            ImGui::Separator();
-            
-            ImGui::Text("Time:        %.2f s", simTime);
-            ImGui::Text("Regime:      %s", suppression_regime_text(last_obs.suppression_regime));
-            ImGui::Text("HRR eff:     %.1f kW", 1e-3 * (double)last_obs.effective_HRR_W);
-            ImGui::Text("Knockdown:   %.1f %%", 100.0 * (double)last_obs.knockdown_0_1);
-            ImGui::Text("Hit eff:     %.1f %%", 100.0 * (double)last_obs.hit_efficiency_0_1);
-            ImGui::Text("Agent flow:  %.4f kg/s", (double)last_obs.agent_mdot_kgps);
-            
-            if (last_substeps > 0) {
-                ImGui::TextColored(ImVec4(0.0f, 1.0f, 1.0f, 1.0f), "Substeps:    %d", last_substeps);
-            }
-            
-            ImGui::Spacing();
-            ImGui::Separator();
-            ImGui::TextColored(cmd_header, "[VISUALIZATION] Draw Layers");
-            ImGui::Separator();
-            
-            ImGui::Checkbox("Warehouse", &ui.draw_warehouse);
-            ImGui::Checkbox("Rack", &ui.draw_rack);
-            ImGui::Checkbox("Fire volume", &ui.draw_fire);
-            ImGui::Checkbox("Fire sectors", &ui.draw_fire_sectors);
-            ImGui::Checkbox("Ceiling Rail", &ui.draw_ceiling_rail);
-            ImGui::Checkbox("Nozzle marker", &ui.draw_nozzle);
-            ImGui::Checkbox("Spray cone", &ui.draw_spray);
-            ImGui::Checkbox("Hit marker", &ui.draw_hit_marker);
-            ImGui::Checkbox("Draft arrow", &ui.draw_draft);
             
             ImGui::Spacing();
             ImGui::Separator();
@@ -953,55 +1037,6 @@ int main(int argc, char** argv) {
             ImGui::TextColored(ImVec4(0.4f, 0.6f, 0.4f, 1.0f), ">> Microgravity Fire Suppression");
             
             ImGui::PopStyleColor(4);
-            ImGui::End();
-        }
-
-        // Plots
-        if (ui.show_plots) {
-            ImGui::Begin("Plots", &ui.show_plots);
-
-            const int N = (int)t_hist.size();
-            const int start = (N > kPlotWindowN) ? (N - kPlotWindowN) : 0;
-            const int count = N - start;
-
-            if (count > 1) {
-                const double t0 = t_hist[start];
-                const double t1 = t_hist[start + count - 1];
-                ImGui::Text("Samples: %d   Window: [%0.2f, %0.2f] s", N, t0, t1);
-
-                plot_line_with_xlimits("Temperature (K)", "T_K",
-                                       t_hist.data() + start, T_hist.data() + start, count, t0, t1);
-
-                plot_line_with_xlimits("HRR (W)", "HRR_W",
-                                       t_hist.data() + start, HRR_hist.data() + start, count, t0, t1);
-
-                plot_line_with_xlimits("Effective Exposure (kg)", "EffExp_kg",
-                                       t_hist.data() + start, EffExp_hist.data() + start, count, t0, t1);
-
-                if (ImPlot::BeginPlot("Knockdown (0-1)")) {
-                    #if defined(ImAxis_X1)
-                    // ImPlot >= 0.16
-                    ImPlot::SetupAxisLimits(ImAxis_X1, t0, t1, ImGuiCond_Always);
-                    #elif defined(ImPlotAxis_X1)
-                    // Transitional versions
-                    ImPlot::SetupAxisLimits(ImPlotAxis_X1, t0, t1, ImGuiCond_Always);
-                    #else
-                    // Very old ImPlot: no explicit axis control (auto-fit fallback)
-                    #endif
-
-                    ImPlot::PlotLine("KD", t_hist.data() + start, KD_hist.data() + start, count);
-                    ImPlot::PlotLine("KD_target", t_hist.data() + start, KDTarget_hist.data() + start, count);
-
-                    ImPlot::EndPlot();
-                }
-
-                plot_line_with_xlimits("O2 (vol %)", "O2",
-                                       t_hist.data() + start, O2_hist.data() + start, count, t0, t1);
-            } else {
-                ImGui::Text("Samples: %d", N);
-                ImGui::TextUnformatted("No data yet (press Run or Step).");
-            }
-
             ImGui::End();
         }
 
@@ -1033,6 +1068,25 @@ int main(int argc, char** argv) {
             if (rail_nozzle.isValid()) {
                 nozzle_pos = to_v3f(rail_nozzle.pose().nozzle_pos_room_m);
                 nozzle_dir = to_v3f(rail_nozzle.pose().spray_dir_unit_room);
+            }
+        } else if (!viz_override_nozzle_pose && last_obs.agent_mdot_kgps > 1e-6) {
+            // When not overriding and suppression is active, aim toward hotspot
+            const auto np = sim.getNozzlePos_m();
+            nozzle_pos = v3((float)np.x, (float)np.y, (float)np.z);
+            
+            // Auto-aim: compute direction from nozzle to fire hotspot
+            Vec3f to_fire = sub(fire_center, nozzle_pos);
+            const float dist = len(to_fire);
+            if (dist > 1e-3f) {
+                nozzle_dir = mul(to_fire, 1.0f / dist);  // normalize
+                // Update simulation with auto-aim direction
+                sim.setNozzlePose({(double)nozzle_pos.x, (double)nozzle_pos.y, (double)nozzle_pos.z},
+                                  {(double)nozzle_dir.x, (double)nozzle_dir.y, (double)nozzle_dir.z});
+            } else {
+                // Fallback to observed spray direction if fire too close
+                nozzle_dir = v3((float)last_obs.spray_dir_unit_x,
+                               (float)last_obs.spray_dir_unit_y,
+                               (float)last_obs.spray_dir_unit_z);
             }
         }
 
