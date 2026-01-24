@@ -32,8 +32,21 @@ echo "Using CMake: $CMAKE"
 echo "SRC:   $SRC"
 echo "BUILD: $BUILD"
 
+echo "=== STOP RUNNING PROCESSES ==="
+# Gracefully stop any running VFEP processes to unlock build directory
+taskkill //F //IM VFEP_Sim.exe 2>/dev/null || echo "  (no VFEP_Sim.exe running)"
+taskkill //F //IM VFEP.exe 2>/dev/null || echo "  (no VFEP.exe running)"
+sleep 1
+
 echo "=== CLEAN ==="
-rm -rf "$BUILD"
+# Try to clean, but continue if directory is busy
+if rm -rf "$BUILD" 2>/dev/null; then
+  echo "  Build directory cleaned"
+else
+  echo "  WARNING: Could not fully clean $BUILD (may be in use)"
+  echo "  Removing only CMakeCache.txt to force reconfigure..."
+  rm -f "$BUILD/CMakeCache.txt" || true
+fi
 
 echo "=== CONFIGURE (VIS ON) ==="
 "$CMAKE" -S "$SRC" -B "$BUILD" -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release -DCHEMSI_BUILD_VIS=ON

@@ -498,7 +498,7 @@ void Simulation::resetToDataCenterRackScenario() {
     // (Will be normalized implicitly by aero module.)
     nozzle_dir_unit_scenario_ = {0.7, -0.15, 0.7};
     nozzle_pos_m_ = {-2.0, 1.5, -2.0};
-    hotspot_pos_m_ = {0.0, 0.6, 0.7};
+    hotspot_pos_m_ = {0.0, 0.6, 0.41};
     ignition_seeded_ = false;
     ignition_seed_u32_ = 0u;
     nozzle_dir_unit_ = nozzle_dir_unit_scenario_;
@@ -1057,11 +1057,11 @@ void Simulation::commandIgniteOrIncreasePyrolysis() {
 
         std::uint32_t s = ignition_seed_u32_;
 
-        // Rack-adjacent ignition volume (meters, world frame).
-        // Conservative bounds so it appears on/near the rack face.
-        const double x = -0.35 + 0.70 * u01(s);  // [-0.35, +0.35]
+        // Rack-front ignition volume (meters, world frame).
+        // Keep fire on the rack front face (z ~= +0.4 in the default scene).
+        const double x = -0.50 + 1.00 * u01(s);  // [-0.50, +0.50]
         const double y =  0.40 + 1.20 * u01(s);  // [0.40, 1.60]
-        const double z =  0.35 + 0.60 * u01(s);  // [0.35, 0.95]
+        const double z =  0.41;                  // slightly in front of rack face
 
         hotspot_pos_m_ = {x, y, z};
 
@@ -1200,7 +1200,7 @@ void Simulation::step(double dt) {
         // Phase 3A: ship-quality geometry realism (stabilized occlusion/shielding + dt-consistent LoA)
         // --------------------
         // Scene anchors mirror the visualizer layout for narrative consistency.
-        const Vec3d fire_center_m{0.0, 0.6, 0.7};
+        const Vec3d fire_center_m = hotspot_pos_m_;
 
         // Sector AABBs (2x2) approximating the Phase 2C fire proxy. Kept constant (no visual coupling).
         const Vec3d fire_half_m{0.35, 0.45, 0.35};

@@ -2,5 +2,11 @@
   "terminal.integrated.env.windows": {
     "PATH": "${env:PATH};C:\\msys64\\mingw64\\bin"
   },
-  "C_Cpp.default.compileCommands": "${workspaceFolder}/cpp_engine/build/compile_commands.json"
+  "C_Cpp.default.compileCommands": "${workspaceFolder}/cpp_engine/build/compile_commands.json",
+  "chat.tools.terminal.autoApprove": {
+    "/^PowerShell -NoProfile -Command \"cmake --build \\\\\"d:\\\\Chemsi\\\\build-mingw64\\\\\" --config Release\"$/": {
+      "approve": true,
+      "matchCommandLine": true
+    }
+  }
 }

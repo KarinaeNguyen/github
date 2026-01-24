@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.20)
 project(CHEMSI LANGUAGES C CXX)
 
+# libxlsxwriter's bundled CMake rejects compatibility with < 3.5.
+# Set the minimum policy version explicitly to avoid configure errors.
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -249,6 +253,17 @@ if (CHEMSI_BUILD_VIS)
   )
   FetchContent_MakeAvailable(implot)
 
+  # --- libxlsxwriter (Excel export) ---
+  set(LXW_BUILD_SHARED OFF CACHE BOOL "" FORCE)
+  set(LXW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+  set(LXW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+  FetchContent_Declare(
+    libxlsxwriter
+    GIT_REPOSITORY https://github.com/jmcnamara/libxlsxwriter.git
+    GIT_TAG        v1.1.8
+  )
+  FetchContent_MakeAvailable(libxlsxwriter)
+
   add_library(imgui_lib STATIC
     ${imgui_SOURCE_DIR}/imgui.cpp
     ${imgui_SOURCE_DIR}/imgui_draw.cpp
@@ -281,4 +296,9 @@ if (CHEMSI_BUILD_VIS)
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/vis
   )
+  if (WIN32)
+    target_link_libraries(VFEP_Vis PRIVATE gdiplus comdlg32)
+  endif()
+
+  target_link_libraries(VFEP_Vis PRIVATE xlsxwriter)
 endif()
