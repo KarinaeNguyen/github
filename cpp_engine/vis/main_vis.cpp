@@ -363,6 +363,146 @@ static int fail(const char* msg) {
 }
 
 // ============================================================
+// STL Mesh Loader & Renderer (Binary STL Format)
+// ============================================================
+
+struct STLTriangle {
+    Vec3f normal;
+    Vec3f v0, v1, v2;
+};
+
+struct STLMesh {
+    std::vector<STLTriangle> triangles;
+    Vec3f center{0,0,0};
+    float scale{1.0f};
+    bool loaded{false};
+};
+
+static bool load_stl_binary(const char* filepath, STLMesh& mesh) {
+    std::ifstream file(filepath, std::ios::binary);
+    if (!file) {
+        std::fprintf(stderr, "Failed to open STL file: %s\n", filepath);
+        return false;
+    }
+
+    // Read 80-byte header (ignored)
+    char header[80];
+    file.read(header, 80);
+    if (!file) return false;
+
+    // Read triangle count
+    uint32_t num_triangles = 0;
+    file.read(reinterpret_cast<char*>(&num_triangles), sizeof(uint32_t));
+    if (!file || num_triangles == 0 || num_triangles > 10000000) {
+        std::fprintf(stderr, "Invalid triangle count: %u\n", num_triangles);
+        return false;
+    }
+
+    mesh.triangles.clear();
+    mesh.triangles.reserve(num_triangles);
+
+    // Read each triangle (50 bytes: 12 floats + 2 bytes attribute)
+    for (uint32_t i = 0; i < num_triangles; ++i) {
+        float data[12];
+        file.read(reinterpret_cast<char*>(data), 12 * sizeof(float));
+        if (!file) {
+            std::fprintf(stderr, "Failed reading triangle %u\n", i);
+            return false;
+        }
+
+        STLTriangle tri;
+        tri.normal = {data[0], data[1], data[2]};
+        tri.v0 = {data[3], data[4], data[5]};
+        tri.v1 = {data[6], data[7], data[8]};
+        tri.v2 = {data[9], data[10], data[11]};
+        mesh.triangles.push_back(tri);
+
+        // Skip 2-byte attribute count
+        uint16_t attr;
+        file.read(reinterpret_cast<char*>(&attr), sizeof(uint16_t));
+    }
+
+    // Calculate center and scale
+    if (!mesh.triangles.empty()) {
+        Vec3f min_pt = mesh.triangles[0].v0;
+        Vec3f max_pt = mesh.triangles[0].v0;
+
+        for (const auto& tri : mesh.triangles) {
+            for (const auto& v : {tri.v0, tri.v1, tri.v2}) {
+                min_pt.x = std::min(min_pt.x, v.x);
+                min_pt.y = std::min(min_pt.y, v.y);
+                min_pt.z = std::min(min_pt.z, v.z);
+                max_pt.x = std::max(max_pt.x, v.x);
+                max_pt.y = std::max(max_pt.y, v.y);
+                max_pt.z = std::max(max_pt.z, v.z);
+            }
+        }
+
+        mesh.center.x = (min_pt.x + max_pt.x) * 0.5f;
+        mesh.center.y = (min_pt.y + max_pt.y) * 0.5f;
+        mesh.center.z = (min_pt.z + max_pt.z) * 0.5f;
+
+        float dx = max_pt.x - min_pt.x;
+        float dy = max_pt.y - min_pt.y;
+        float dz = max_pt.z - min_pt.z;
+        float max_dim = std::max({dx, dy, dz});
+        mesh.scale = (max_dim > 1e-6f) ? (1.0f / max_dim) : 1.0f;
+    }
+
+    mesh.loaded = true;
+    std::fprintf(stderr, "Loaded STL: %s (%zu triangles)\n", filepath, mesh.triangles.size());
+    return true;
+}
+
+static void draw_stl_mesh(const STLMesh& mesh, Vec3f position, Vec3f scale_vec, float user_scale) {
+    if (!mesh.loaded || mesh.triangles.empty()) return;
+
+    glPushMatrix();
+    glTranslatef(position.x, position.y, position.z);
+    glScalef(scale_vec.x * user_scale * mesh.scale,
+             scale_vec.y * user_scale * mesh.scale,
+             scale_vec.z * user_scale * mesh.scale);
+    glTranslatef(-mesh.center.x, -mesh.center.y, -mesh.center.z);
+
+    glBegin(GL_TRIANGLES);
+    for (const auto& tri : mesh.triangles) {
+        glNormal3f(tri.normal.x, tri.normal.y, tri.normal.z);
+        glVertex3f(tri.v0.x, tri.v0.y, tri.v0.z);
+        glVertex3f(tri.v1.x, tri.v1.y, tri.v1.z);
+        glVertex3f(tri.v2.x, tri.v2.y, tri.v2.z);
+    }
+    glEnd();
+
+    glPopMatrix();
+}
+
+static void draw_stl_mesh_wireframe(const STLMesh& mesh, Vec3f position, Vec3f scale_vec, float user_scale) {
+    if (!mesh.loaded || mesh.triangles.empty()) return;
+
+    glPushMatrix();
+    glTranslatef(position.x, position.y, position.z);
+    glScalef(scale_vec.x * user_scale * mesh.scale,
+             scale_vec.y * user_scale * mesh.scale,
+             scale_vec.z * user_scale * mesh.scale);
+    glTranslatef(-mesh.center.x, -mesh.center.y, -mesh.center.z);
+
+    glBegin(GL_LINES);
+    for (const auto& tri : mesh.triangles) {
+        glVertex3f(tri.v0.x, tri.v0.y, tri.v0.z);
+        glVertex3f(tri.v1.x, tri.v1.y, tri.v1.z);
+        
+        glVertex3f(tri.v1.x, tri.v1.y, tri.v1.z);
+        glVertex3f(tri.v2.x, tri.v2.y, tri.v2.z);
+        
+        glVertex3f(tri.v2.x, tri.v2.y, tri.v2.z);
+        glVertex3f(tri.v0.x, tri.v0.y, tri.v0.z);
+    }
+    glEnd();
+
+    glPopMatrix();
+}
+
+// ============================================================
 // Minimal Phase-1 3D Twin (fixed-pipeline, deterministic, no assets)
 // Adds: HUD overlay + visualization toggles + docking
 // ============================================================
@@ -834,6 +974,14 @@ int main(int argc, char** argv) {
 
     // --- Visual fire intensity scale ---
     float fire_vis_scale = 0.70f;
+
+    // --- STL Mesh Loading ---
+    STLMesh stl_mesh;
+    Vec3f stl_position = v3(0.0f, 0.0f, 0.0f);
+    float stl_user_scale = 1.0f;
+    bool stl_wireframe = false;
+    bool stl_visible = true;
+    char stl_filepath[256] = "";
 
     // --- VFB (Vicinity Firefighting Bullet) projectile settings ---
     bool  vfb_mode          = false;
@@ -1446,6 +1594,58 @@ int main(int argc, char** argv) {
                     ImGui::EndTabItem();
                 }
                 
+                // ===== TAB 3.5: STL MESH =====
+                if (ImGui::BeginTabItem("  STL  ")) {
+                    ImGui::TextColored(cmd_header, "[STL MESH] 3D Object Import");
+                    ImGui::Separator();
+                    
+                    ImGui::InputText("File path", stl_filepath, sizeof(stl_filepath));
+                    
+                    if (ImGui::Button("[ LOAD STL ]", ImVec2(-1, 0))) {
+                        if (stl_filepath[0] != '\0') {
+                            STLMesh temp_mesh;
+                            if (load_stl_binary(stl_filepath, temp_mesh)) {
+                                stl_mesh = temp_mesh;
+                            }
+                        }
+                    }
+                    
+                    ImGui::Spacing();
+                    ImGui::Text("Status: %s", stl_mesh.loaded ? "LOADED" : "Not loaded");
+                    if (stl_mesh.loaded) {
+                        ImGui::Text("Triangles: %zu", stl_mesh.triangles.size());
+                        ImGui::Text("Center: (%.2f, %.2f, %.2f)", stl_mesh.center.x, stl_mesh.center.y, stl_mesh.center.z);
+                        ImGui::Text("Auto-scale: %.4f", stl_mesh.scale);
+                    }
+                    
+                    ImGui::Spacing();
+                    ImGui::Separator();
+                    ImGui::TextColored(cmd_header, "[TRANSFORM]");
+                    ImGui::DragFloat3("Position (m)", &stl_position.x, 0.1f);
+                    ImGui::SliderFloat("Scale", &stl_user_scale, 0.1f, 10.0f, "%.2f");
+                    
+                    ImGui::Spacing();
+                    ImGui::Separator();
+                    ImGui::TextColored(cmd_header, "[DISPLAY]");
+                    ImGui::Checkbox("Visible", &stl_visible);
+                    ImGui::Checkbox("Wireframe", &stl_wireframe);
+                    
+                    ImGui::Spacing();
+                    ImGui::Separator();
+                    ImGui::TextDisabled("Quick load examples:");
+                    if (ImGui::Button("Load: rack.stl")) {
+                        strcpy(stl_filepath, "rack.stl");
+                    }
+                    if (ImGui::Button("Load: equipment.stl")) {
+                        strcpy(stl_filepath, "equipment.stl");
+                    }
+                    if (ImGui::Button("Load: room.stl")) {
+                        strcpy(stl_filepath, "room.stl");
+                    }
+                    
+                    ImGui::EndTabItem();
+                }
+                
                 // ===== TAB 4: PLOTS =====
                 if (ImGui::BeginTabItem("  PLOTS  ")) {
                     const int N = (int)t_hist.size();
@@ -1758,6 +1958,36 @@ int main(int argc, char** argv) {
             if (ui.draw_warehouse) {
                 glColor3f(0.25f, 0.25f, 0.28f);
                 draw_wire_box(v3(0.0f, warehouse_half.y, 0.0f), warehouse_half);
+            }
+
+            // === STL Mesh Rendering ===
+            if (stl_mesh.loaded && stl_visible) {
+                glEnable(GL_LIGHTING);
+                glEnable(GL_LIGHT0);
+                
+                // Simple lighting setup
+                GLfloat light_pos[] = {10.0f, 10.0f, 10.0f, 0.0f};
+                GLfloat light_amb[] = {0.3f, 0.3f, 0.3f, 1.0f};
+                GLfloat light_diff[] = {0.8f, 0.8f, 0.8f, 1.0f};
+                glLightfv(GL_LIGHT0, GL_POSITION, light_pos);
+                glLightfv(GL_LIGHT0, GL_AMBIENT, light_amb);
+                glLightfv(GL_LIGHT0, GL_DIFFUSE, light_diff);
+                
+                // Material (cyan-ish metal for imported objects)
+                glColor3f(0.4f, 0.7f, 0.8f);
+                GLfloat mat_spec[] = {0.5f, 0.5f, 0.5f, 1.0f};
+                glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, mat_spec);
+                glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, 32.0f);
+                
+                if (stl_wireframe) {
+                    glDisable(GL_LIGHTING);
+                    glColor3f(0.2f, 0.9f, 0.9f);
+                    draw_stl_mesh_wireframe(stl_mesh, stl_position, v3(1,1,1), stl_user_scale);
+                } else {
+                    draw_stl_mesh(stl_mesh, stl_position, v3(1,1,1), stl_user_scale);
+                }
+                
+                glDisable(GL_LIGHTING);
             }
 
             if (ui.draw_rack) {
