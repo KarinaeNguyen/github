@@ -10,6 +10,8 @@
 #include <memory>
 
 #include "Simulation.h"
+#include "SensitivityAnalysis.h"
+#include "UncertaintyQuantification.h"
 
 namespace {
 
@@ -3687,6 +3689,333 @@ static void runSuppressionIntensityTests() {
     }
 }
 
+// =======================
+// Phase 7: Sensitivity Analysis & Uncertainty Quantification Tests
+// =======================
+
+static void runSensitivityAnalyzerBasic_7A1()
+{
+    vfep::SensitivityAnalyzer analyzer;
+    
+    // Test basic construction and initialization
+    vfep::SensitivityAnalyzer::ScenarioConfig scenario;
+    scenario.dt_s = 0.05;
+    scenario.t_end_s = 60.0;
+    scenario.ignite_at_s = 2.0;
+    scenario.pyrolysis_max_kgps = 0.01;
+    scenario.heat_release_J_per_mol = 1.0e5;
+    
+    analyzer.setScenario(scenario);
+    analyzer.clearResults();
+    
+    // Results should be empty after clear
+    REQUIRE(analyzer.results().empty(), "7A1: results not empty after clearResults()");
+    
+    // Test basic parameter range
+    vfep::SensitivityAnalyzer::ParameterRange range;
+    range.nominal = 1.0e5;
+    range.min = 0.75e5;
+    range.max = 1.25e5;
+    range.samples = 5;
+    
+    // Run a sweep
+    analyzer.analyzeHeatRelease(range);
+    
+    // Results should now have data
+    const auto& results = analyzer.results();
+    REQUIRE(!results.empty(), "7A1: no results after analyzeHeatRelease()");
+    REQUIRE(results.size() == 5, "7A1: unexpected result count");
+    
+    // Verify all results have finite metrics
+    for (const auto& row : results) {
+        REQUIRE_FINITE(row.parameter_value, "7A1: parameter_value non-finite");
+        REQUIRE_FINITE(row.metrics.peak_T_K, "7A1: peak_T_K non-finite");
+        REQUIRE_FINITE(row.metrics.peak_HRR_W, "7A1: peak_HRR_W non-finite");
+        REQUIRE_FINITE(row.metrics.t_peak_HRR_s, "7A1: t_peak_HRR_s non-finite");
+        
+        REQUIRE(row.metrics.peak_T_K > 0.0, "7A1: peak_T_K not positive");
+        REQUIRE(row.metrics.peak_HRR_W >= 0.0, "7A1: peak_HRR_W negative");
+        REQUIRE(row.metrics.t_peak_HRR_s >= 0.0, "7A1: t_peak_HRR_s negative");
+    }
+    
+    std::cout << "[PASS] 7A1 SensitivityAnalyzer basic initialization and sweep\n";
+}
+
+static void runSensitivityAnalyzerParameterSweep_7A2()
+{
+    vfep::SensitivityAnalyzer analyzer;
+    
+    vfep::SensitivityAnalyzer::ScenarioConfig scenario;
+    scenario.dt_s = 0.05;
+    scenario.t_end_s = 30.0;
+    scenario.ignite_at_s = 2.0;
+    scenario.pyrolysis_max_kgps = 0.03;
+    scenario.heat_release_J_per_mol = 1.0e5;
+    
+    analyzer.setScenario(scenario);
+    
+    // Test heat release sweep
+    {
+        vfep::SensitivityAnalyzer::ParameterRange range;
+        range.nominal = 1.0e5;
+        range.min = 0.5e5;
+        range.max = 1.5e5;
+        range.samples = 3;
+        
+        analyzer.analyzeHeatRelease(range);
+        const auto& results = analyzer.results();
+        
+        REQUIRE(results.size() == 3, "7A2: heat release sweep wrong size");
+        REQUIRE(results[0].parameter_name == "heat_release_J_per_mol", "7A2: wrong parameter name");
+        
+        // Verify parameter values span the range
+        REQUIRE(results[0].parameter_value >= range.min - 1e-6, "7A2: first value below min");
+        REQUIRE(results[2].parameter_value <= range.max + 1e-6, "7A2: last value above max");
+    }
+    
+    // Test wall loss sweep
+    {
+        vfep::SensitivityAnalyzer::ParameterRange range;
+        range.nominal = 10.0;
+        range.min = 0.5;
+        range.max = 20.0;
+        range.samples = 4;
+        
+        analyzer.analyzeWallLoss(range);
+        const auto& results = analyzer.results();
+        
+        REQUIRE(results.size() == 4, "7A2: wall loss sweep wrong size");
+        REQUIRE(results[0].parameter_name == "h_W_m2K", "7A2: wrong parameter name for wall loss");
+        
+        for (const auto& row : results) {
+            REQUIRE(row.parameter_value >= range.min - 1e-6, "7A2: value below min");
+            REQUIRE(row.parameter_value <= range.max + 1e-6, "7A2: value above max");
+        }
+    }
+    
+    // Test geometry (volume) sweep
+    {
+        vfep::SensitivityAnalyzer::ParameterRange range;
+        range.nominal = 120.0;
+        range.min = 50.0;
+        range.max = 200.0;
+        range.samples = 3;
+        
+        analyzer.analyzeGeometry(range);
+        const auto& results = analyzer.results();
+        
+        REQUIRE(results.size() == 3, "7A2: geometry sweep wrong size");
+        REQUIRE(results[0].parameter_name == "volume_m3", "7A2: wrong parameter name for geometry");
+    }
+    
+    // Test pyrolysis sweep
+    {
+        vfep::SensitivityAnalyzer::ParameterRange range;
+        range.nominal = 0.03;
+        range.min = 0.01;
+        range.max = 0.05;
+        range.samples = 3;
+        
+        analyzer.analyzePyrolysis(range);
+        const auto& results = analyzer.results();
+        
+        REQUIRE(results.size() == 3, "7A2: pyrolysis sweep wrong size");
+        REQUIRE(results[0].parameter_name == "pyrolysis_max_kgps", "7A2: wrong parameter name for pyrolysis");
+    }
+    
+    std::cout << "[PASS] 7A2 SensitivityAnalyzer parameter sweeps (heat release, wall loss, geometry, pyrolysis)\n";
+}
+
+static void runSensitivityAnalyzerResults_7A3()
+{
+    vfep::SensitivityAnalyzer analyzer;
+    
+    vfep::SensitivityAnalyzer::ScenarioConfig scenario;
+    scenario.dt_s = 0.05;
+    scenario.t_end_s = 30.0;
+    scenario.ignite_at_s = 2.0;
+    scenario.pyrolysis_max_kgps = 0.02;
+    scenario.heat_release_J_per_mol = 1.0e5;
+    
+    analyzer.setScenario(scenario);
+    
+    vfep::SensitivityAnalyzer::ParameterRange range;
+    range.nominal = 1.0e5;
+    range.min = 0.8e5;
+    range.max = 1.2e5;
+    range.samples = 5;
+    
+    analyzer.analyzeHeatRelease(range);
+    
+    // Test result monotonicity: parameter values should be sorted
+    const auto& results = analyzer.results();
+    REQUIRE(results.size() == 5, "7A3: unexpected result count");
+    
+    // Check that parameter values are sorted
+    for (std::size_t i = 1; i < results.size(); ++i) {
+        REQUIRE(results[i].parameter_value >= results[i-1].parameter_value - 1e-6,
+                "7A3: parameter values not sorted");
+    }
+    
+    // Test CSV export (basic smoke test - file creation)
+    analyzer.exportSensitivityMatrixCSV("test_sensitivity_7A3.csv");
+    
+    // Verify results remain accessible after export
+    const auto& results_after = analyzer.results();
+    REQUIRE(results_after.size() == results.size(), "7A3: results changed after export");
+    
+    std::cout << "[PASS] 7A3 SensitivityAnalyzer results and CSV export\n";
+}
+
+static void runMonteCarloUQBasic_7B1()
+{
+    vfep::MonteCarloUQ uq;
+    
+    // Test basic construction and configuration
+    vfep::MonteCarloUQ::ScenarioConfig scenario;
+    scenario.dt_s = 0.05;
+    scenario.t_end_s = 30.0;
+    scenario.ignite_at_s = 2.0;
+    scenario.pyrolysis_max_kgps = 0.02;
+    scenario.heat_release_J_per_mol = 1.0e5;
+    
+    uq.setScenario(scenario);
+    
+    // Set parameter ranges
+    vfep::MonteCarloUQ::UQRanges ranges;
+    ranges.heat_release_J_per_mol = {0.8e5, 1.2e5};
+    ranges.h_W_m2K = {5.0, 15.0};
+    ranges.volume_m3 = {100.0, 140.0};
+    ranges.pyrolysis_max_kgps = {0.01, 0.03};
+    
+    uq.setRanges(ranges);
+    
+    // Run small Monte Carlo (5 samples for speed)
+    const auto summary = uq.runMonteCarlo(5);
+    
+    // Verify all UQResult fields are finite and reasonable
+    REQUIRE_FINITE(summary.peak_T_K.mean, "7B1: peak_T_K.mean non-finite");
+    REQUIRE_FINITE(summary.peak_T_K.median, "7B1: peak_T_K.median non-finite");
+    REQUIRE_FINITE(summary.peak_T_K.ci_lower_95, "7B1: peak_T_K.ci_lower_95 non-finite");
+    REQUIRE_FINITE(summary.peak_T_K.ci_upper_95, "7B1: peak_T_K.ci_upper_95 non-finite");
+    REQUIRE_FINITE(summary.peak_T_K.std_dev, "7B1: peak_T_K.std_dev non-finite");
+    
+    REQUIRE_FINITE(summary.peak_HRR_W.mean, "7B1: peak_HRR_W.mean non-finite");
+    REQUIRE_FINITE(summary.peak_HRR_W.median, "7B1: peak_HRR_W.median non-finite");
+    REQUIRE_FINITE(summary.peak_HRR_W.std_dev, "7B1: peak_HRR_W.std_dev non-finite");
+    
+    REQUIRE_FINITE(summary.t_peak_HRR_s.mean, "7B1: t_peak_HRR_s.mean non-finite");
+    
+    // Verify confidence intervals are ordered correctly
+    REQUIRE(summary.peak_T_K.ci_lower_95 <= summary.peak_T_K.ci_upper_95,
+            "7B1: peak_T_K confidence interval inverted");
+    REQUIRE(summary.peak_HRR_W.ci_lower_95 <= summary.peak_HRR_W.ci_upper_95,
+            "7B1: peak_HRR_W confidence interval inverted");
+    
+    // Verify std_dev is non-negative
+    REQUIRE(summary.peak_T_K.std_dev >= 0.0, "7B1: peak_T_K.std_dev negative");
+    REQUIRE(summary.peak_HRR_W.std_dev >= 0.0, "7B1: peak_HRR_W.std_dev negative");
+    
+    std::cout << "[PASS] 7B1 MonteCarloUQ basic initialization and small run\n";
+}
+
+static void runMonteCarloUQSampling_7B2()
+{
+    vfep::MonteCarloUQ uq;
+    
+    vfep::MonteCarloUQ::ScenarioConfig scenario;
+    scenario.dt_s = 0.05;
+    scenario.t_end_s = 20.0;
+    scenario.ignite_at_s = 2.0;
+    scenario.pyrolysis_max_kgps = 0.02;
+    scenario.heat_release_J_per_mol = 1.0e5;
+    
+    uq.setScenario(scenario);
+    
+    vfep::MonteCarloUQ::UQRanges ranges;
+    ranges.heat_release_J_per_mol = {0.9e5, 1.1e5};
+    ranges.h_W_m2K = {8.0, 12.0};
+    ranges.volume_m3 = {110.0, 130.0};
+    ranges.pyrolysis_max_kgps = {0.015, 0.025};
+    
+    uq.setRanges(ranges);
+    
+    // Test different sample counts
+    const int sample_counts[] = {1, 3, 10};
+    
+    for (int n : sample_counts) {
+        const auto summary = uq.runMonteCarlo(n);
+        
+        // All results should be finite regardless of sample count
+        REQUIRE_FINITE(summary.peak_T_K.mean, "7B2: mean non-finite");
+        REQUIRE_FINITE(summary.peak_HRR_W.median, "7B2: median non-finite");
+        
+        // For n=1, std_dev should be 0 and CI should collapse to single value
+        if (n == 1) {
+            REQUIRE(summary.peak_T_K.std_dev == 0.0, "7B2: std_dev not zero for n=1");
+            REQUIRE(summary.peak_T_K.mean == summary.peak_T_K.median, "7B2: mean != median for n=1");
+        }
+        
+        // For n>1, CI should be meaningful
+        if (n > 1) {
+            const double span_T = summary.peak_T_K.ci_upper_95 - summary.peak_T_K.ci_lower_95;
+            REQUIRE(span_T >= 0.0, "7B2: negative CI span");
+        }
+    }
+    
+    std::cout << "[PASS] 7B2 MonteCarloUQ sampling with various counts (1, 3, 10)\n";
+}
+
+static void runMonteCarloUQResults_7B3()
+{
+    vfep::MonteCarloUQ uq;
+    
+    vfep::MonteCarloUQ::ScenarioConfig scenario;
+    scenario.dt_s = 0.05;
+    scenario.t_end_s = 25.0;
+    scenario.ignite_at_s = 2.0;
+    scenario.pyrolysis_max_kgps = 0.02;
+    scenario.heat_release_J_per_mol = 1.0e5;
+    
+    uq.setScenario(scenario);
+    
+    vfep::MonteCarloUQ::UQRanges ranges;
+    ranges.heat_release_J_per_mol = {0.75e5, 1.25e5};
+    ranges.h_W_m2K = {5.0, 15.0};
+    ranges.volume_m3 = {100.0, 150.0};
+    ranges.pyrolysis_max_kgps = {0.01, 0.03};
+    
+    uq.setRanges(ranges);
+    
+    // Run larger sample for better statistics
+    const auto summary = uq.runMonteCarlo(20);
+    
+    // Verify statistical properties
+    // Mean should be within CI bounds (with small tolerance for numerical issues)
+    REQUIRE(summary.peak_T_K.mean >= summary.peak_T_K.ci_lower_95 - 1e-6,
+            "7B3: mean below lower CI");
+    REQUIRE(summary.peak_T_K.mean <= summary.peak_T_K.ci_upper_95 + 1e-6,
+            "7B3: mean above upper CI");
+    
+    // Median should be within CI bounds
+    REQUIRE(summary.peak_HRR_W.median >= summary.peak_HRR_W.ci_lower_95 - 1e-6,
+            "7B3: median below lower CI");
+    REQUIRE(summary.peak_HRR_W.median <= summary.peak_HRR_W.ci_upper_95 + 1e-6,
+            "7B3: median above upper CI");
+    
+    // Standard deviation should be positive (with n=20, we expect variation)
+    REQUIRE(summary.peak_T_K.std_dev > 0.0, "7B3: std_dev not positive with n=20");
+    REQUIRE(summary.peak_HRR_W.std_dev > 0.0, "7B3: HRR std_dev not positive with n=20");
+    
+    // CI span should be reasonable (non-zero with n=20)
+    const double span_T = summary.peak_T_K.ci_upper_95 - summary.peak_T_K.ci_lower_95;
+    const double span_HRR = summary.peak_HRR_W.ci_upper_95 - summary.peak_HRR_W.ci_lower_95;
+    REQUIRE(span_T > 0.0, "7B3: peak_T_K CI span not positive");
+    REQUIRE(span_HRR > 0.0, "7B3: peak_HRR_W CI span not positive");
+    
+    std::cout << "[PASS] 7B3 MonteCarloUQ statistical result validation (n=20)\n";
+}
+
 } // namespace
 
 int main() {
@@ -3756,6 +4085,16 @@ int main() {
     // Phase 4A: Suppression Intensity Tests
     // =======================
     runSuppressionIntensityTests();
+
+    // =======================
+    // Phase 7: Sensitivity Analysis Tests
+    // =======================
+    runSensitivityAnalyzerBasic_7A1();
+    runSensitivityAnalyzerParameterSweep_7A2();
+    runSensitivityAnalyzerResults_7A3();
+    runMonteCarloUQBasic_7B1();
+    runMonteCarloUQSampling_7B2();
+    runMonteCarloUQResults_7B3();
 
     return 0;
     

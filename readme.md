@@ -1,21 +1,30 @@
 # CHEMSI / VFEP Simulation
 
-**Current Project Phase**: Phase 6 - ✅ **COMPLETE (4/4 Scenarios Passing)**
+**Current Project Phase**: Phase 7 - ✅ **IN PROGRESS (Sensitivity Analysis & UQ)**
 
 ## Quick Navigation
 
 ### 📋 Start Here
 - **New to project?** → [VFEP_SIMULATION_OVERVIEW.md](VFEP_SIMULATION_OVERVIEW.md)
 - **Run quickly?** → [QUICKSTART.md](QUICKSTART.md)
-- **Phase 6 complete?** → [PHASE6_FINAL_COMPLETION.md](PHASE6_FINAL_COMPLETION.md)
+- **Phase 7 status?** → [PHASE7_INTEGRITY_REPORT.md](PHASE7_INTEGRITY_REPORT.md)
 
 ### 🎯 Current Status
 - **Validation Rate**: 100% (4/4 scenarios passing)
-- **Numeric Tests**: 51/51 passing
+- **Numeric Tests**: 57/57 passing (including Phase 7 tests)
 - **Build Status**: ✅ Clean, no warnings
-- **Ready for**: Phase 7 - Advanced validation
+- **Phase 7 Modules**: SensitivityAnalysis, UncertaintyQuantification
 
-### 📊 Phase 6 Results
+### 📊 Phase 7 Progress
+- ✅ SensitivityAnalysis module (parameter sweeps)
+- ✅ UncertaintyQuantification module (Monte Carlo + LHS)
+- ✅ 6 numeric integrity tests (7A1-7A3, 7B1-7B3)
+- ✅ SweepTool CLI utility
+- ⏳ New scenarios (Ship Fire, Tunnel Fire, Industrial)
+- ⏳ Three-zone model implementation
+- ⏳ CFD coupling interface (mock)
+
+### 📊 Validation Results
 | Scenario | Predicted | Target | Error | Status |
 |----------|-----------|--------|-------|--------|
 | ISO 9705 | 981K | 1023K ±50K | 4.11% | ✅ PASS |
@@ -35,6 +44,6 @@
 - **Phase 3-4**: Integration (suppression, ventilation)
 - **Phase 5**: Initial calibration (NIST baseline)
 - **Phase 6**: Multi-scenario validation (✅ COMPLETE)
-- **Phase 7**: Advanced validation (planned)
+- **Phase 7**: Advanced validation & UQ (✅ WEEK 1 COMPLETE)
 
 Historical logs and verification notes are archived to keep documentation concise.

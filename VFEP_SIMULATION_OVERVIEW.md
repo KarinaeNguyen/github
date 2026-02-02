@@ -1,7 +1,7 @@
 # VFEP Simulation — External Overview
 
-## Status (Jan 23, 2026)
-Build pipeline is in place; simulation server and visualization are ready to run once dependencies are resolved.
+## Status (Feb 2, 2026)
+**Phase 7 in progress.** SensitivityAnalysis and UncertaintyQuantification modules implemented. All 57 numeric integrity tests pass, all 4 validation scenarios pass within literature bounds.
 
 ## What This Is
 VFEP is a deterministic fire-suppression simulation and visualization system. It couples a C++ physics/chemistry core with a real-time UI that streams telemetry via gRPC for live inspection and control.
@@ -28,11 +28,15 @@ Build scripts: [launch_all.sh](launch_all.sh) and [cpp_engine/launch_all.bat](cp
 - **Visualization client:** VFEP.exe — ImGui/ImPlot UI with 3D scene and live plots.
 - **Build scripts:** launch_all.sh and launch_all.bat — standard build/configure/run entry points.
 
-## Key Features (Current Stage)
-- Deterministic stepping with telemetry cadence for reproducibility.
-- Nozzle automation tied to suppression state.
-- Four-tab UI (EXEC, NOZZLE, VIZ, PLOTS) for organized workflows.
-- Real-time plots: Temperature, HRR, Exposure, Knockdown, O2.
+## Key Features (Current Stage - Phase 7)
+- **Advanced Validation:** SensitivityAnalysis module for parameter sweeps (heat release, wall loss, geometry, pyrolysis)
+- **Uncertainty Quantification:** Monte Carlo simulation with Latin Hypercube Sampling
+- **57/57 Numeric Integrity Tests:** Including 6 new Phase 7 tests (sensitivity + UQ validation)
+- **4/4 Literature Validation:** ISO 9705, NIST, Suppression, Stratification (all within ±15% bounds)
+- Deterministic stepping with telemetry cadence for reproducibility
+- Nozzle automation tied to suppression state
+- Four-tab UI (EXEC, NOZZLE, VIZ, PLOTS) for organized workflows
+- Real-time plots: Temperature, HRR, Exposure, Knockdown, O2
 
 ## Outputs & Artifacts
 - Telemetry CSV outputs (e.g., high_fidelity_ml.csv) for analysis.

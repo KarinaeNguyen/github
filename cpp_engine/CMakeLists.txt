@@ -44,6 +44,17 @@ add_library(chemsi ${CHEMSI_CORE_SRCS})
 target_include_directories(chemsi PUBLIC ${CMAKE_SOURCE_DIR}/include)
 
 # ============================================================
+# Phase 7: Sensitivity Analysis (library + tool)
+# ============================================================
+add_library(SensitivityAnalysis src/SensitivityAnalysis.cpp)
+target_include_directories(SensitivityAnalysis PUBLIC ${CMAKE_SOURCE_DIR}/include)
+target_link_libraries(SensitivityAnalysis PUBLIC chemsi)
+
+add_library(UncertaintyQuantification src/UncertaintyQuantification.cpp)
+target_include_directories(UncertaintyQuantification PUBLIC ${CMAKE_SOURCE_DIR}/include)
+target_link_libraries(UncertaintyQuantification PUBLIC chemsi)
+
+# ============================================================
 # gRPC + Protobuf (Unity integration)
 # ============================================================
 if (CHEMSI_ENABLE_GRPC)
@@ -199,6 +210,9 @@ target_link_libraries(VFEP_Sim PRIVATE chemsi)
 add_executable(ValidationSuite src/ValidationSuite.cpp)
 target_link_libraries(ValidationSuite PRIVATE chemsi)
 
+add_executable(SweepTool tools/SweepTool.cpp)
+target_link_libraries(SweepTool PRIVATE SensitivityAnalysis)
+
 add_executable(VFEP_GrpcClient src/grpc_client.cpp)
 target_link_libraries(VFEP_GrpcClient PRIVATE chemsi)
 
@@ -212,7 +226,7 @@ target_link_libraries(TestAtom PRIVATE chemsi)
 add_test(NAME TestAtom COMMAND TestAtom)
 
 add_executable(NumericIntegrity tests/TestNumericIntegrity.cpp)
-target_link_libraries(NumericIntegrity PRIVATE chemsi)
+target_link_libraries(NumericIntegrity PRIVATE chemsi SensitivityAnalysis UncertaintyQuantification)
 add_test(NAME NumericIntegrity COMMAND NumericIntegrity)
 
 # MSVC Debug stack overflow fix for NumericIntegrity
